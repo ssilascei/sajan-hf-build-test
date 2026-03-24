@@ -75,7 +75,7 @@ def main() -> None:
         per_device_train_batch_size=int(cfg["per_device_train_batch_size"]),
         per_device_eval_batch_size=int(cfg["per_device_eval_batch_size"]),
         weight_decay=float(cfg["weight_decay"]),
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="no",
         logging_steps=10,
         seed=int(cfg["seed"]),
