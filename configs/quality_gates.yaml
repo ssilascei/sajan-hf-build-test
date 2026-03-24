@@ -1,0 +1,3 @@
+min_accuracy: 0.70
+min_f1_macro: 0.70
+baseline_metrics_path: configs/baseline_metrics.json
