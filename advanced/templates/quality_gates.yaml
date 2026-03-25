@@ -1,0 +1,63 @@
+# Hugging Face MLOps: Quality Gates Template
+# Copy this to your project as configs/quality_gates.yaml
+# Update threshold values for your task and team.
+
+# Schema versioning: used in metrics and validation
+metric_contract_version: "1.0.0"
+
+# ========== THRESHOLD GATES ==========
+# All candidate metrics must MEET OR EXCEED these thresholds
+# If ANY threshold fails, the entire pipeline stops
+
+min_accuracy: 0.70
+min_f1_macro: 0.70
+
+# ========== BASELINE REGRESSION GATES ==========
+# Candidate must not regress below baseline model performance
+# Baseline is typically the last approved production model
+
+baseline_metrics_path: configs/baseline_metrics.json
+
+# If allow_baseline_regression=true, warn but do not fail
+# If false (recommended), regression causes gate failure
+allow_baseline_regression: false
+
+# ========== GATE ENFORCEMENT POLICY ==========
+# strict: gate failure causes immediate exit code 1
+# warn: gate failure logs warning but does not exit
+# disabled: gates not enforced (for dev/prototyping only)
+
+gate_enforcement_level: strict
+
+# ========== GATE FAILURE ACTION ==========
+# exit: exit with code 1 on gate failure
+# log: log warning and continue (useful for observability)
+
+gate_failure_action: exit
+
+# ========== OPTIONAL: ADDITIONAL GATES ==========
+# Add custom metrics and thresholds as needed for your task
+
+# Example for token classification task:
+# min_precision: 0.75
+# min_recall: 0.72
+
+# Example for summarization task:
+# min_rouge_l: 0.40
+# min_bertscore: 0.85
+
+# ========== SCHEMA VALIDATION ==========
+# The gate checker will validate metrics.json against the schema in:
+# advanced/schemas/metrics_schema.json
+# 
+# If metrics.json is missing REQUIRED fields, gates will fail with
+# a clear error message showing which fields are missing.
+
+# ========== AUDIT TRAIL ==========
+# Gate checker will output:
+# 1. Timestamp of gate check
+# 2. Metric values checked
+# 3. Threshold comparison (candidate vs. min)
+# 4. Baseline comparison (candidate vs. baseline)
+# 5. Pass/fail decision
+# 6. Lineage: git commit, run ID, config hash

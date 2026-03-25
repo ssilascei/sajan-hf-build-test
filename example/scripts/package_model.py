@@ -12,6 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--metrics", default="artifacts/metrics/eval_metrics.json", help="Path to metrics file.")
     parser.add_argument("--config", default="configs/train.yaml", help="Path to train config file.")
     parser.add_argument("--version", required=True, help="Artifact version (tag or release id).")
+    parser.add_argument("--model-name", required=True, help="Package name prefix for the artifact.")
     parser.add_argument("--output-dir", default="artifacts/package", help="Output directory for package.")
     return parser.parse_args()
 
@@ -36,6 +37,7 @@ def main() -> None:
 
     metadata = {
         "version": args.version,
+        "model_name": args.model_name,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "model_dir": str(model_dir),
         "metrics_path": str(metrics_path),
@@ -46,7 +48,7 @@ def main() -> None:
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
-    package_name = f"hf-bert-tiny-{args.version}.tar.gz"
+    package_name = f"{args.model_name}-{args.version}.tar.gz"
     package_path = output_dir / package_name
 
     with tarfile.open(package_path, "w:gz") as tar:

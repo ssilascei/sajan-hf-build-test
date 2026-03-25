@@ -1,0 +1,23 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_version:
+        description: "Model version for release (v1.0.0 or 20260325.1). Leave empty to skip release."
+        required: false
+        type: string
+
+jobs:
+  # Call the canonical MLOps pipeline from the platform
+  # This single workflow orchestrates: train → evaluate → release → publish
+  pipeline:
+    uses: ./.github/workflows/hf-mlops-pipeline.yml
+    with:
+      config_path: configs/train.yaml
+      model_version: ${{ github.event.inputs.model_version }}
+      skip_release: ${{ github.event.inputs.model_version == '' }}
+    secrets:
+      JFROG_URL: ${{ secrets.JFROG_URL }}
+      JFROG_REPO: ${{ secrets.JFROG_REPO }}
+      JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}

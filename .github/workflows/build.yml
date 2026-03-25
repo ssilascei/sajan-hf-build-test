@@ -3,149 +3,38 @@ name: build
 on:
   workflow_dispatch:
     inputs:
+      model_name:
+        description: "Model package prefix (for example: hf-ag-news-bert)"
+        required: true
+        type: string
       model_version:
-        description: "Model version for release (example: v1.0.0 or 20260323.1). Leave empty to skip release."
+        description: "Model version for release (example: v1.0.0 or 20260325.1). Leave empty to run train/evaluate only."
         required: false
         type: string
 
 jobs:
-  train:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Train model
-        run: python scripts/train.py --config configs/train.yaml
-
-      - name: Upload model artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: trained-model
-          path: artifacts/model
-
-      - name: Upload training metrics
-        uses: actions/upload-artifact@v4
-        with:
-          name: train-metrics
-          path: artifacts/metrics/train_metrics.json
-
-  evaluate:
-    needs: train
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Download trained model
-        uses: actions/download-artifact@v4
-        with:
-          name: trained-model
-          path: artifacts/model
-
-      - name: Evaluate model
-        run: python scripts/evaluate.py --config configs/train.yaml --model-dir artifacts/model --output artifacts/metrics/eval_metrics.json
-
-      - name: Run quality gates
-        run: python scripts/check_gates.py --metrics artifacts/metrics/eval_metrics.json --gates configs/quality_gates.yaml
-
-      - name: Upload eval metrics
-        uses: actions/upload-artifact@v4
-        with:
-          name: eval-metrics
-          path: artifacts/metrics/eval_metrics.json
-
-  release:
-    needs: evaluate
-    runs-on: ubuntu-latest
-    outputs:
-      package_name: ${{ steps.package_name.outputs.package_name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Download trained model
-        uses: actions/download-artifact@v4
-        with:
-          name: trained-model
-          path: artifacts/model
-
-      - name: Download eval metrics
-        uses: actions/download-artifact@v4
-        with:
-          name: eval-metrics
-          path: artifacts/metrics
-
-      - name: Enforce quality gates (second check)
-        run: python scripts/check_gates.py --metrics artifacts/metrics/eval_metrics.json --gates configs/quality_gates.yaml
-
-      - name: Package release artifact
-        run: python scripts/package_model.py --version "${{ github.event.inputs.model_version }}"
-
-      - name: Set package name output
-        id: package_name
-        run: echo "package_name=hf-bert-tiny-${{ github.event.inputs.model_version }}.tar.gz" >> "$GITHUB_OUTPUT"
-
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-package
-          path: artifacts/package
-
-  publish_to_artifactory:
-    needs: release
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Download release package
-        uses: actions/download-artifact@v4
-        with:
-          name: release-package
-          path: artifacts/package
-
-      - name: Publish to JFrog Artifactory
-        env:
-          JFROG_URL: ${{ secrets.JFROG_URL }}
-          JFROG_REPO: ${{ secrets.JFROG_REPO }}
-          JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
-          PACKAGE_NAME: ${{ needs.release.outputs.package_name }}
-        run: |
-          if [ -z "$JFROG_URL" ] || [ -z "$JFROG_REPO" ] || [ -z "$JFROG_TOKEN" ]; then
-            echo "Missing required JFrog secrets.";
-            exit 1;
-          fi
-          PACKAGE_PATH="artifacts/package/$PACKAGE_NAME"
-          CHECKSUM_PATH="${PACKAGE_PATH}.sha256"
-          TARGET_BASE="$JFROG_URL/artifactory/$JFROG_REPO/huggingface-models/$PACKAGE_NAME"
-          curl -f -H "Authorization: Bearer $JFROG_TOKEN" -T "$PACKAGE_PATH" "$TARGET_BASE"
-          curl -f -H "Authorization: Bearer $JFROG_TOKEN" -T "$CHECKSUM_PATH" "${TARGET_BASE}.sha256"
+  pipeline:
+    uses: ./.github/workflows/hf-mlops-pipeline.yml
+    with:
+      model_name: ${{ github.event.inputs.model_name }}
+      model_version: ${{ github.event.inputs.model_version }}
+      skip_release: ${{ github.event.inputs.model_version == '' }}
+      config_path: example/configs/train.yaml
+      requirements_path: example/requirements.txt
+      train_script_path: example/scripts/train.py
+      evaluate_script_path: example/scripts/evaluate.py
+      check_gates_script_path: example/scripts/check_gates.py
+      package_script_path: example/scripts/package_model.py
+      model_artifact_dir: example/artifacts/model
+      train_metrics_path: example/artifacts/metrics/train_metrics.json
+      eval_metrics_path: example/artifacts/metrics/eval_metrics.json
+      eval_metrics_dir: example/artifacts/metrics
+      package_output_dir: example/artifacts/package
+      gates_config_path: example/configs/quality_gates.yaml
+      schema_path: advanced/schemas/metrics_schema.json
+      python_version: "3.11"
+      runs_on: ubuntu-latest
+    secrets:
+      JFROG_URL: ${{ secrets.JFROG_URL }}
+      JFROG_REPO: ${{ secrets.JFROG_REPO }}
+      JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}

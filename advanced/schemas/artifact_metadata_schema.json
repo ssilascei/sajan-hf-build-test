@@ -1,0 +1,201 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hugging Face Release Artifact Metadata",
+  "description": "Standard schema for release artifact metadata. All released models must include metadata.json conforming to this schema.",
+  "type": "object",
+  "required": [
+    "version",
+    "artifact_name",
+    "created_at_utc",
+    "created_by",
+    "model",
+    "training",
+    "evaluation",
+    "lineage"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Semantic or build version (e.g., v1.2.0 or 20260325.001)"
+    },
+    "artifact_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short artifact name (e.g., hf-bert-tiny)"
+    },
+    "created_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when artifact was created (UTC)"
+    },
+    "created_by": {
+      "type": "string",
+      "enum": ["github-actions", "manual", "ci-system"],
+      "description": "System that created the release"
+    },
+    "model": {
+      "type": "object",
+      "required": ["base_model", "training_dataset", "model_task"],
+      "properties": {
+        "base_model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Base model name from Hugging Face (e.g., prajjwal1/bert-tiny)"
+        },
+        "training_dataset": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Dataset used for training (e.g., ag_news)"
+        },
+        "training_split_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of training samples used"
+        },
+        "eval_split_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of evaluation samples used"
+        },
+        "model_task": {
+          "type": "string",
+          "enum": [
+            "text-classification",
+            "token-classification",
+            "question-answering",
+            "summarization",
+            "embedding",
+            "causal-lm",
+            "other"
+          ],
+          "description": "Task type the model was trained for"
+        }
+      }
+    },
+    "training": {
+      "type": "object",
+      "required": ["epochs", "learning_rate", "batch_size", "seed", "git_sha"],
+      "properties": {
+        "epochs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of training epochs"
+        },
+        "learning_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Learning rate used"
+        },
+        "batch_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Batch size used"
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Random seed for reproducibility"
+        },
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{7,40}$",
+          "description": "Git commit SHA when training was triggered"
+        },
+        "training_config_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA256 hash of training config"
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "required": ["accuracy", "f1_macro", "eval_loss", "gates_passed"],
+      "properties": {
+        "accuracy": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Evaluation accuracy"
+        },
+        "f1_macro": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Macro-averaged F1 score"
+        },
+        "eval_loss": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Evaluation loss"
+        },
+        "baseline_accuracy": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Baseline accuracy for comparison"
+        },
+        "baseline_f1_macro": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Baseline f1_macro for comparison"
+        },
+        "gates_passed": {
+          "type": "boolean",
+          "description": "Flag indicating all quality gates passed"
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "required": ["github_run_id", "config_sha256", "artifact_sha256"],
+      "properties": {
+        "github_run_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "GitHub Actions workflow run ID"
+        },
+        "github_run_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to GitHub Actions run"
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA256 of training config"
+        },
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA256 checksum of the release tarball"
+        }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "properties": {
+        "approver": {
+          "type": "string",
+          "description": "User or team that approved release"
+        },
+        "approval_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When approval was given (UTC)"
+        },
+        "retention_policy": {
+          "type": "string",
+          "enum": ["immutable-7-years", "immutable-5-years", "immutable-3-years"],
+          "description": "Minimum retention time"
+        },
+        "pii_scan_passed": {
+          "type": "boolean",
+          "description": "Whether PII scan passed"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

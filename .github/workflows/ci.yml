@@ -20,10 +20,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r example/requirements.txt
 
       - name: Validate scripts syntax
-        run: python -m compileall scripts
+        run: python -m compileall example/scripts
 
       - name: Run tests
         run: pytest -q

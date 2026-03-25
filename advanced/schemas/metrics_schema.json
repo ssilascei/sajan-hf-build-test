@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hugging Face Evaluation Metrics Contract",
+  "description": "Standard schema for all evaluation outputs. All metrics JSON files must conform to this schema.",
+  "type": "object",
+  "required": [
+    "accuracy",
+    "f1_macro",
+    "eval_loss",
+    "model_name",
+    "dataset_name",
+    "split",
+    "run_id",
+    "git_sha",
+    "timestamp_utc",
+    "config_hash",
+    "metric_contract_version"
+  ],
+  "properties": {
+    "accuracy": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Classification accuracy on eval split (0.0 to 1.0)"
+    },
+    "f1_macro": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Macro-averaged F1 score (0.0 to 1.0)"
+    },
+    "eval_loss": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Average evaluation loss (≥ 0.0)"
+    },
+    "model_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Base model identifier (e.g., distilbert-base-uncased, prajjwal1/bert-tiny)"
+    },
+    "dataset_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Dataset identifier (e.g., ag_news, custom_internal_ds)"
+    },
+    "split": {
+      "type": "string",
+      "enum": ["train", "validation", "test", "eval"],
+      "description": "Evaluation split name"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique run identifier (typically GitHub run ID)"
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{7,40}$",
+      "description": "Git commit SHA (at least 7 chars, up to full 40-char SHA)"
+    },
+    "timestamp_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when evaluation completed (UTC)"
+    },
+    "config_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "SHA256 hash of training config for regression detection"
+    },
+    "metric_contract_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Schema version (semantic versioning, e.g., 1.0.0)"
+    },
+    "baseline_accuracy": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Optional: baseline accuracy for regression check"
+    },
+    "baseline_f1_macro": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Optional: baseline f1_macro for regression check"
+    },
+    "additional_metrics": {
+      "type": "object",
+      "description": "Optional: task-specific metrics (precision, recall, etc.)"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "accuracy": 0.85,
+      "f1_macro": 0.83,
+      "eval_loss": 0.32,
+      "model_name": "distilbert-base-uncased",
+      "dataset_name": "ag_news",
+      "split": "test",
+      "run_id": "12345",
+      "git_sha": "abc123d",
+      "timestamp_utc": "2026-03-25T10:15:30Z",
+      "config_hash": "sha256:xyz789123456789123456789123456789123456789123456789123456789",
+      "metric_contract_version": "1.0.0"
+    }
+  ]
+}

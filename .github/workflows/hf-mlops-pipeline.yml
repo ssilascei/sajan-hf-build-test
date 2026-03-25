@@ -1,0 +1,426 @@
+name: hf-mlops-pipeline
+
+# This is a reusable workflow meant to be called from other repositories.
+# Teams reference this workflow via: uses: org/platform-repo/.github/workflows/hf-mlops-pipeline.yml@main
+# This ensures all teams use the same canonical pipeline logic.
+
+on:
+  workflow_call:
+    inputs:
+      # Training config
+      config_path:
+        description: "Path to training config file"
+        required: false
+        type: string
+        default: "configs/train.yaml"
+      
+      # Script paths (customizable for teams with different folder structures)
+      train_script_path:
+        description: "Path to training script"
+        required: false
+        type: string
+        default: "scripts/train.py"
+      evaluate_script_path:
+        description: "Path to evaluation script"
+        required: false
+        type: string
+        default: "scripts/evaluate.py"
+      check_gates_script_path:
+        description: "Path to quality gates checker script"
+        required: false
+        type: string
+        default: "scripts/check_gates.py"
+      package_script_path:
+        description: "Path to packaging script"
+        required: false
+        type: string
+        default: "scripts/package_model.py"
+      requirements_path:
+        description: "Path to pip requirements file"
+        required: false
+        type: string
+        default: "requirements.txt"
+      gates_config_path:
+        description: "Path to quality gates config YAML"
+        required: false
+        type: string
+        default: "configs/quality_gates.yaml"
+      
+      # Stage control
+      skip_release:
+        description: "Skip release/publish stages (useful for CI on PRs)"
+        required: false
+        type: boolean
+        default: false
+      model_version:
+        description: "Model version for release (v1.0.0 or 20260325.1). Required if skip_release=false"
+        required: false
+        type: string
+      model_name:
+        description: "Model package prefix used for release artifact naming"
+        required: true
+        type: string
+      
+      # Infrastructure config
+      python_version:
+        description: "Python version"
+        required: false
+        type: string
+        default: "3.11"
+      runs_on:
+        description: "Runner label (ubuntu-latest or self-hosted,gpu)"
+        required: false
+        type: string
+        default: "ubuntu-latest"
+      
+      # Artifact paths
+      model_artifact_dir:
+        description: "Directory where model is saved during training"
+        required: false
+        type: string
+        default: "artifacts/model"
+      train_metrics_path:
+        description: "Path to training metrics JSON"
+        required: false
+        type: string
+        default: "artifacts/metrics/train_metrics.json"
+      eval_metrics_path:
+        description: "Path to evaluation metrics JSON"
+        required: false
+        type: string
+        default: "artifacts/metrics/eval_metrics.json"
+      eval_metrics_dir:
+        description: "Directory where evaluation metrics artifact is downloaded"
+        required: false
+        type: string
+        default: "artifacts/metrics"
+      package_output_dir:
+        description: "Directory where packaged release artifact is created"
+        required: false
+        type: string
+        default: "artifacts/package"
+      
+      # Schema validation
+      schema_path:
+        description: "Path to metrics schema JSON"
+        required: false
+        type: string
+        default: "advanced/schemas/metrics_schema.json"
+    
+    secrets:
+      JFROG_URL:
+        description: "JFrog Artifactory base URL"
+        required: false
+      JFROG_REPO:
+        description: "JFrog target repository"
+        required: false
+      JFROG_TOKEN:
+        description: "JFrog API token (Bearer auth)"
+        required: false
+
+jobs:
+  # ============================================================================
+  # Stage 1: TRAIN
+  # ============================================================================
+  train:
+    name: "Train"
+    runs-on: ${{ inputs.runs_on }}
+    outputs:
+      model_artifact: trained-model
+      train_metrics_artifact: train-metrics
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: pip-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          REQUIREMENTS_PATH: ${{ inputs.requirements_path }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "$REQUIREMENTS_PATH"
+
+      - name: Train model
+        env:
+          TRAIN_SCRIPT_PATH: ${{ inputs.train_script_path }}
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: python "$TRAIN_SCRIPT_PATH" --config "$CONFIG_PATH"
+
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: ${{ inputs.model_artifact_dir }}
+          retention-days: 5
+
+      - name: Upload training metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: train-metrics
+          path: ${{ inputs.train_metrics_path }}
+          retention-days: 5
+
+      - name: Print training summary
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+          MODEL_ARTIFACT_DIR: ${{ inputs.model_artifact_dir }}
+        run: |
+          echo "✅ Training completed"
+          echo "   Config: $CONFIG_PATH"
+          echo "   Model: $MODEL_ARTIFACT_DIR"
+
+  # ============================================================================
+  # Stage 2: EVALUATE & QUALITY GATES
+  # ============================================================================
+  evaluate:
+    name: "Evaluate & Gate Check"
+    needs: train
+    runs-on: ${{ inputs.runs_on }}
+    outputs:
+      eval_metrics_artifact: eval-metrics
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: pip-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          REQUIREMENTS_PATH: ${{ inputs.requirements_path }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "$REQUIREMENTS_PATH"
+
+      - name: Download trained model
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: ${{ inputs.model_artifact_dir }}
+
+      - name: Evaluate model
+        env:
+          EVALUATE_SCRIPT_PATH: ${{ inputs.evaluate_script_path }}
+          CONFIG_PATH: ${{ inputs.config_path }}
+          MODEL_ARTIFACT_DIR: ${{ inputs.model_artifact_dir }}
+          EVAL_METRICS_PATH: ${{ inputs.eval_metrics_path }}
+        run: |
+          python "$EVALUATE_SCRIPT_PATH" \
+            --config "$CONFIG_PATH" \
+            --model-dir "$MODEL_ARTIFACT_DIR" \
+            --output "$EVAL_METRICS_PATH"
+
+      - name: Validate schema & check quality gates
+        env:
+          CHECK_GATES_SCRIPT_PATH: ${{ inputs.check_gates_script_path }}
+          EVAL_METRICS_PATH: ${{ inputs.eval_metrics_path }}
+          SCHEMA_PATH: ${{ inputs.schema_path }}
+          GATES_PATH: ${{ inputs.gates_config_path }}
+        run: |
+          python "$CHECK_GATES_SCRIPT_PATH" \
+            --metrics "$EVAL_METRICS_PATH" \
+            --gates "$GATES_PATH" \
+            --schema "$SCHEMA_PATH"
+
+      - name: Upload eval metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-metrics
+          path: ${{ inputs.eval_metrics_path }}
+          retention-days: 5
+
+      - name: Print evaluation summary
+        env:
+          EVAL_METRICS_PATH: ${{ inputs.eval_metrics_path }}
+        run: |
+          echo "✅ Evaluation completed"
+          echo "   Metrics: $EVAL_METRICS_PATH"
+          echo "   Quality gates: PASSED ✓"
+
+  # ============================================================================
+  # Stage 3: RELEASE (PACKAGING)
+  # ============================================================================
+  release:
+    name: "Package Release"
+    needs: evaluate
+    if: |
+      !inputs.skip_release &&
+      inputs.model_version != '' &&
+      inputs.model_version != null
+    runs-on: ${{ inputs.runs_on }}
+    outputs:
+      package_name: ${{ inputs.model_name }}-${{ inputs.model_version }}.tar.gz
+      release_artifact: release-package
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: pip-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          REQUIREMENTS_PATH: ${{ inputs.requirements_path }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "$REQUIREMENTS_PATH"
+
+      - name: Download trained model
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: ${{ inputs.model_artifact_dir }}
+
+      - name: Download eval metrics
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-metrics
+          path: ${{ inputs.eval_metrics_dir }}
+
+      - name: Re-check quality gates (safety redundancy)
+        env:
+          CHECK_GATES_SCRIPT_PATH: ${{ inputs.check_gates_script_path }}
+          EVAL_METRICS_PATH: ${{ inputs.eval_metrics_path }}
+          SCHEMA_PATH: ${{ inputs.schema_path }}
+          GATES_PATH: ${{ inputs.gates_config_path }}
+        run: |
+          python "$CHECK_GATES_SCRIPT_PATH" \
+            --metrics "$EVAL_METRICS_PATH" \
+            --gates "$GATES_PATH" \
+            --schema "$SCHEMA_PATH"
+
+      - name: Package release artifact
+        env:
+          PACKAGE_SCRIPT_PATH: ${{ inputs.package_script_path }}
+          MODEL_NAME: ${{ inputs.model_name }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+          MODEL_ARTIFACT_DIR: ${{ inputs.model_artifact_dir }}
+          EVAL_METRICS_PATH: ${{ inputs.eval_metrics_path }}
+          CONFIG_PATH: ${{ inputs.config_path }}
+          PACKAGE_OUTPUT_DIR: ${{ inputs.package_output_dir }}
+        run: |
+          python "$PACKAGE_SCRIPT_PATH" \
+            --model-dir "$MODEL_ARTIFACT_DIR" \
+            --metrics "$EVAL_METRICS_PATH" \
+            --config "$CONFIG_PATH" \
+            --version "$MODEL_VERSION" \
+            --model-name "$MODEL_NAME" \
+            --output-dir "$PACKAGE_OUTPUT_DIR"
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: ${{ inputs.package_output_dir }}
+          retention-days: 30
+
+      - name: Print release summary
+        env:
+          MODEL_NAME: ${{ inputs.model_name }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+        run: |
+          echo "✅ Release packaging completed"
+          echo "   Version: $MODEL_VERSION"
+          echo "   Package: $MODEL_NAME-$MODEL_VERSION.tar.gz"
+
+  # ============================================================================
+  # Stage 4: PUBLISH TO JFROG
+  # ============================================================================
+  publish_to_artifactory:
+    name: "Publish to JFrog"
+    needs: release
+    if: |
+      !inputs.skip_release &&
+      inputs.model_version != '' &&
+      inputs.model_version != null
+    runs-on: ${{ inputs.runs_on }}
+    environment: production  # Requires approval gate
+    steps:
+      - name: Download release package
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: ${{ inputs.package_output_dir }}
+
+      - name: Validate JFrog configuration
+        env:
+          JFROG_URL: ${{ secrets.JFROG_URL }}
+          JFROG_REPO: ${{ secrets.JFROG_REPO }}
+          JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+        run: |
+          if [ -z "$JFROG_URL" ] || [ -z "$JFROG_REPO" ] || [ -z "$JFROG_TOKEN" ]; then
+            echo "❌ ERROR: Missing JFrog secrets (JFROG_URL, JFROG_REPO, JFROG_TOKEN)"
+            exit 1
+          fi
+          echo "✓ JFrog credentials configured"
+
+      - name: Publish to JFrog Artifactory
+        env:
+          JFROG_URL: ${{ secrets.JFROG_URL }}
+          JFROG_REPO: ${{ secrets.JFROG_REPO }}
+          JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+          MODEL_NAME: ${{ inputs.model_name }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+          PACKAGE_NAME: ${{ inputs.model_name }}-${{ inputs.model_version }}.tar.gz
+          PACKAGE_OUTPUT_DIR: ${{ inputs.package_output_dir }}
+        run: |
+          PACKAGE_PATH="$PACKAGE_OUTPUT_DIR/$PACKAGE_NAME"
+          
+          if [ ! -f "$PACKAGE_PATH" ]; then
+            echo "❌ Package not found: $PACKAGE_PATH"
+            exit 1
+          fi
+          
+          CHECKSUM_PATH="${PACKAGE_PATH}.sha256"
+          TARGET_BASE="$JFROG_URL/artifactory/$JFROG_REPO/huggingface-models/$PACKAGE_NAME"
+          
+          echo "📦 Uploading: $PACKAGE_NAME"
+          curl -f -H "Authorization: Bearer $JFROG_TOKEN" -T "$PACKAGE_PATH" "$TARGET_BASE"
+          
+          if [ -f "$CHECKSUM_PATH" ]; then
+            echo "📝 Uploading checksum"
+            curl -f -H "Authorization: Bearer $JFROG_TOKEN" -T "$CHECKSUM_PATH" "${TARGET_BASE}.sha256"
+          fi
+          
+          echo "✓ Upload successful"
+
+      - name: Print publish summary
+        env:
+          MODEL_NAME: ${{ inputs.model_name }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+          JFROG_URL: ${{ secrets.JFROG_URL }}
+          JFROG_REPO: ${{ secrets.JFROG_REPO }}
+        run: |
+          echo "✅ Publishing completed"
+          echo "   Package: $MODEL_NAME-$MODEL_VERSION.tar.gz"
+          echo "   Repository: $JFROG_REPO"
+          echo "   URL: $JFROG_URL/artifactory/$JFROG_REPO/huggingface-models/$MODEL_NAME-$MODEL_VERSION.tar.gz"
